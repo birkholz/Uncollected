@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: Uncollected
+## Notes: Restores the retail-style Collected/Not Collected filters in the Collections journal for WoW Forever, and tidies up a couple of filters left over from other game types.
+## Author: Brandon Birkholz
+## Version: 1.0
+
+Uncollected.lua
