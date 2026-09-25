@@ -1,47 +1,34 @@
--- Forever's built-in default filters hide uncollected appearances. The FilterButton's "reset to
--- default" control (the red X) calls C_TransmogCollection.SetDefaultFilters() directly, undoing our
--- override every time it's clicked. Unlike the mixin-copied frame methods below, C_TransmogCollection
--- is a shared API table looked up fresh on every call, so wrapping it here fixes the reset button
--- everywhere it's used (the Collections journal and the in-game Transmogrifier frame alike).
+-- The reset ("X") button calls this directly, which would re-hide uncollected appearances.
+-- C_TransmogCollection is a shared table (not mixin-copied), so wrapping it here fixes the
+-- reset button everywhere it's used, not just in the Collections journal.
 local Blizzard_TransmogCollection_SetDefaultFilters = C_TransmogCollection.SetDefaultFilters;
 function C_TransmogCollection.SetDefaultFilters()
 	Blizzard_TransmogCollection_SetDefaultFilters();
 	C_TransmogCollection.SetUncollectedShown(true);
 end
 
--- Mounts/Pets/Toys all use the shared WowDropdownFilterBehaviorMixin for their
--- FilterDropdown's red "reset to default" X. SetIsDefaultCallback only registers a function;
--- the button's shown/hidden state is actually computed by :ValidateResetState(), which only runs
--- on OnShow, OnMenuAssigned, or after a menu interaction - never automatically when something
--- outside the dropdown (like this addon) changes the underlying filter value. If Blizzard_Collections
--- happens to load before our PLAYER_LOGIN handler runs (e.g. a Collections tab was left open across
--- a UI reload), a dropdown can validate against the stale pre-override value and never re-check it.
--- Explicitly re-validate after forcing the filters so the X can't get stuck showing.
+-- The reset X's shown/hidden state only updates on OnShow or menu interaction, never
+-- automatically when we change filters from outside. Re-validate it manually so it
+-- doesn't get stuck showing after we force filters on.
 local function ValidateDropdownResetState(dropdown)
 	if dropdown and dropdown.ValidateResetState then
 		dropdown:ValidateResetState();
 	end
 end
 
--- Forever hides the "onlyShowCollectedItemsInJournal" CVar's UI and defaults it to true.
--- Mounts/Toys/Pets hide their FilterDropdown entirely in OnLoad when the CVar is true,
--- and never re-check it afterward, so this must run before Blizzard_Collections loads
--- (it is LoadOnDemand, triggered the first time the player opens the Collections journal).
+-- Forever defaults onlyShowCollectedItemsInJournal to true, which makes Mounts/Toys/Pets
+-- hide their FilterDropdown entirely in OnLoad. Must run before Blizzard_Collections loads.
 local function ForceShowUncollected()
 	if C_CVar.GetCVarBool("onlyShowCollectedItemsInJournal") then
 		C_CVar.SetCVar("onlyShowCollectedItemsInJournal", "0");
 	end
 
 	C_MountJournal.SetCollectedFilterSetting(LE_MOUNT_JOURNAL_FILTER_NOT_COLLECTED, true);
-	-- Unlike the other journals, Forever's Pet Journal also defaults LE_PET_JOURNAL_FILTER_COLLECTED
-	-- to false (not just NOT_COLLECTED), so its "IsDefaultCallback" (Collected AND NotCollected) can
-	-- never report true without also forcing this one on.
+	-- Forever also defaults the Pet Journal's COLLECTED filter to false, not just NOT_COLLECTED.
 	C_PetJournal.SetFilterChecked(LE_PET_JOURNAL_FILTER_COLLECTED, true);
 	C_PetJournal.SetFilterChecked(LE_PET_JOURNAL_FILTER_NOT_COLLECTED, true);
-	-- Separately, LE_PET_JOURNAL_FILTER_TYPE_BATTLE_PETS and _NON_COMBAT_PETS also default to false
-	-- in Forever, hiding every pet regardless of Collected/NotCollected. Classic/Blizzard_PetCollection.lua
-	-- (the Pet Journal build Forever loads) never exposes checkboxes for these, so there is no in-game
-	-- way to fix them without forcing them here.
+	-- The battle/non-combat pet type filters also default off, hiding every pet regardless of
+	-- Collected/NotCollected. There's no in-game checkbox for these, so force them directly.
 	C_PetJournal.SetFilterChecked(LE_PET_JOURNAL_FILTER_TYPE_BATTLE_PETS, true);
 	C_PetJournal.SetFilterChecked(LE_PET_JOURNAL_FILTER_TYPE_NON_COMBAT_PETS, true);
 	C_ToyBox.SetUncollectedShown(true);
@@ -52,14 +39,11 @@ local function ForceShowUncollected()
 	ValidateDropdownResetState(ToyBox and ToyBox.FilterDropdown);
 end
 
--- Camelot/Blizzard_Wardrobe.lua overrides WardrobeCollectionFrameMixin:InitItemsFilterButtonSetupMenu
--- to force C_TransmogCollection.SetUncollectedShown(false) every time the filter menu opens, and
--- skips creating the Collected/Not Collected checkboxes entirely. Restore the Standard behavior.
+-- Camelot/Blizzard_Wardrobe.lua forces uncollected items hidden and skips creating the
+-- Collected/Not Collected checkboxes. Restore the standard behavior.
 --
--- WardrobeCollectionFrame is built from XML with mixin="WardrobeCollectionFrameMixin", which copies
--- the mixin's functions onto the frame *once* when the frame is created (during Blizzard_Collections'
--- own load), before our ADDON_LOADED handler runs. So patching the shared mixin table here is too
--- late for that already-created instance; the frame must be patched directly.
+-- WardrobeCollectionFrame already exists with the mixin's functions copied in by the time
+-- we load, so patching the mixin table alone wouldn't affect it - patch the frame directly.
 local function InitItemsFilterButtonSetupMenu(self, dropdown, rootDescription, CreateSourceFilters)
 	rootDescription:CreateCheckbox(COLLECTED, C_TransmogCollection.GetCollectedShown, function()
 		C_TransmogCollection.SetCollectedShown(not C_TransmogCollection.GetCollectedShown());
@@ -72,11 +56,9 @@ local function InitItemsFilterButtonSetupMenu(self, dropdown, rootDescription, C
 	CreateSourceFilters(rootDescription);
 end
 
--- The FilterButton's red "reset to default" X is driven by whatever SetIsDefaultCallback returns.
--- Forever's InitItemsFilterButton (untouched by us) wires this to C_TransmogCollection.IsUsingDefaultFilters,
--- whose baked-in notion of "default" is uncollected-hidden, so it never reports true once we force
--- uncollected on and the X shows permanently. Replace it with our own definition of default that is
--- scoped to exactly what Forever's menu exposes: Collected, Not Collected, and per-source checkboxes.
+-- Forever's default filter check treats uncollected-hidden as "default", so the reset X would
+-- show permanently once we force uncollected on. Redefine default as everything Forever's menu
+-- actually exposes: Collected, Not Collected, and all sources checked.
 local function IsUsingDefaultItemFilters()
 	if not C_TransmogCollection.GetCollectedShown() or not C_TransmogCollection.GetUncollectedShown() then
 		return false;
@@ -97,8 +79,7 @@ local function SetDefaultItemFilters()
 	C_TransmogCollection.SetAllSourceTypeFilters(true);
 end
 
--- Same mixin-copy timing issue as InitItemsFilterButtonSetupMenu: must patch the instance, and
--- reinitialize immediately so it takes effect without requiring a tab switch.
+-- Same mixin-copy timing issue as above: patch the instance and re-init immediately.
 local function InitItemsFilterButton(self)
 	local function CreateSourceFilters(description)
 		description:CreateButton(CHECK_ALL, function()
@@ -136,14 +117,12 @@ local function InitItemsFilterButton(self)
 	end);
 end
 
--- Forever only has ground mounts, but Mainline/Blizzard_MountCollection.lua's mount-Type submenu
--- (Ground/Flying/Aquatic/Dragonriding/Ride Along) is built unconditionally in MountJournal_InitFilterButton,
--- gated only by C_MountJournal.IsValidTypeFilter, which doesn't know to exclude those for this game type.
--- MountJournal_InitFilterButton is a bare global (not mixin-copied), but it's still called once from
--- MountJournal's OnLoad before we can override it, and that already-built SetupMenu closure won't
--- change just because the global function is reassigned - so re-run it against the live frame too.
+-- Forever only has ground mounts, but the mount Type submenu (Ground/Flying/Aquatic/...) gets
+-- built anyway - IsValidTypeFilter doesn't know to exclude those for this game type.
+-- MountJournal_InitFilterButton already ran once (as a bare global) before we could override it,
+-- so reassign it for next time and also re-run it against the live frame now.
 local function InitMountFilterButton(self)
-	-- If ForceShowUncollected() ran after OnLoad already hid this for a stale true CVar, restore it.
+	-- Undo OnLoad hiding this if the CVar was still true at that point.
 	self.FilterDropdown:Show();
 	self.FilterDropdown:SetWidth(90);
 
@@ -209,10 +188,8 @@ end
 
 local eventFrame = CreateFrame("Frame");
 eventFrame:RegisterEvent("PLAYER_LOGIN");
--- PLAYER_LOGIN only fires on initial login or /reload, not on returning from a loading screen
--- (zoning, teleporting, entering an instance). Something resets the underlying filter values on
--- those transitions too, so PLAYER_ENTERING_WORLD (which fires on all of the above) is needed to
--- reapply them every time, not just at login.
+-- Something also resets the filters on zoning/teleporting/entering instances, not just at
+-- login, so PLAYER_ENTERING_WORLD is needed too.
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD");
 eventFrame:RegisterEvent("ADDON_LOADED");
 eventFrame:SetScript("OnEvent", function(self, event, loadedAddonName)
