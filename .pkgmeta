@@ -1,1 +1,6 @@
 package-as: Uncollected
+
+license-output: LICENSE.txt
+
+ignore:
+    - media
