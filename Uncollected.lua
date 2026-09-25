@@ -38,6 +38,12 @@ local function ForceShowUncollected()
 	-- never report true without also forcing this one on.
 	C_PetJournal.SetFilterChecked(LE_PET_JOURNAL_FILTER_COLLECTED, true);
 	C_PetJournal.SetFilterChecked(LE_PET_JOURNAL_FILTER_NOT_COLLECTED, true);
+	-- Separately, LE_PET_JOURNAL_FILTER_TYPE_BATTLE_PETS and _NON_COMBAT_PETS also default to false
+	-- in Forever, hiding every pet regardless of Collected/NotCollected. Classic/Blizzard_PetCollection.lua
+	-- (the Pet Journal build Forever loads) never exposes checkboxes for these, so there is no in-game
+	-- way to fix them without forcing them here.
+	C_PetJournal.SetFilterChecked(LE_PET_JOURNAL_FILTER_TYPE_BATTLE_PETS, true);
+	C_PetJournal.SetFilterChecked(LE_PET_JOURNAL_FILTER_TYPE_NON_COMBAT_PETS, true);
 	C_ToyBox.SetUncollectedShown(true);
 	C_TransmogCollection.SetUncollectedShown(true);
 
@@ -203,9 +209,14 @@ end
 
 local eventFrame = CreateFrame("Frame");
 eventFrame:RegisterEvent("PLAYER_LOGIN");
+-- PLAYER_LOGIN only fires on initial login or /reload, not on returning from a loading screen
+-- (zoning, teleporting, entering an instance). Something resets the underlying filter values on
+-- those transitions too, so PLAYER_ENTERING_WORLD (which fires on all of the above) is needed to
+-- reapply them every time, not just at login.
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD");
 eventFrame:RegisterEvent("ADDON_LOADED");
 eventFrame:SetScript("OnEvent", function(self, event, loadedAddonName)
-	if event == "PLAYER_LOGIN" then
+	if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
 		ForceShowUncollected();
 	elseif loadedAddonName == "Blizzard_Collections" then
 		ForceShowUncollected();
