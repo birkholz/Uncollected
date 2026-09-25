@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Uncollected
-## Notes: Restores the retail-style Collected/Not Collected filters in the Collections journal for WoW Forever, and tidies up a couple of filters left over from other game types.
+## Notes: Restores the Collected/Not Collected filters in the Collections journal
 ## Author: Brandon Birkholz
 ## Version: @project-version@
 ## IconTexture: Interface\AddOns\Uncollected\Textures\icon
